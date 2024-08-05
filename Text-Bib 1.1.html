@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot-Bib</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+        }
+        #sidebar {
+            width: 250px;
+            background-color: #f0f0f0;
+            padding: 20px;
+            height: 100vh;
+            overflow-y: auto;
+        }
+        #main-content {
+            flex-grow: 1;
+            padding: 20px;
+        }
+        .folder {
+            cursor: pointer;
+            margin-bottom: 5px;
+        }
+        .document {
+            cursor: pointer;
+            margin-bottom: 5px;
+        }
+        #document-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        .document-item {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: center;
+        }
+        #editor {
+            width: 100%;
+            height: 300px;
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            background-color: #f8f8f8;
+            border: 1px solid #ddd;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        .delete-btn {
+            color: red;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        button {
+            margin: 5px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h2>Folders</h2>
+        <button onclick="addFolder()">Add Folder</button>
+        <div id="folder-list"></div>
+    </div>
+    <div id="main-content">
+        <h1>Text Manager</h1>
+        <button onclick="createNewDocument()">New Document</button>
+        <button onclick="saveAllFiles()">Save All Files</button>
+        <button onclick="saveToFile()">Save as File</button>
+        <br>
+        <div id="document-list"></div>
+        <textarea id="editor" oninput="autoSave()"></textarea>
+    </div>
+
+    <script>
+        let currentDocument = null;
+        let currentFolder = null;
+        let autoSaveTimeout = null;
+
+        function loadData() {
+            const folders = JSON.parse(localStorage.getItem('folders')) || [];
+            const documents = JSON.parse(localStorage.getItem('documents')) || [];
+            
+            renderFolders(folders);
+            renderDocuments(documents);
+        }
+
+        function renderFolders(folders) {
+            const folderList = document.getElementById('folder-list');
+            folderList.innerHTML = folders.map(folder => `
+                <div class="folder">
+                    <span onclick="selectFolder('${folder}')">${folder}</span>
+                    <span class="delete-btn" onclick="deleteFolder('${folder}')">🗑️</span>
+                </div>
+            `).join('');
+        }
+
+        function renderDocuments(documents) {
+            const documentList = document.getElementById('document-list');
+            documentList.innerHTML = documents
+                .filter(doc => !currentFolder || doc.folder === currentFolder)
+                .map(doc => `
+                    <div class="document-item">
+                        <div onclick="openDocument('${doc.id}')">${doc.name}</div>
+                        <div>Changed: ${new Date(doc.lastModified).toLocaleDateString()}</div>
+                        <span class="delete-btn" onclick="deleteDocument('${doc.id}')">🗑️</span>
+                    </div>
+                `).join('');
+        }
+
+        function addFolder() {
+            const folderName = prompt('Enter folder name:');
+            if (folderName) {
+                const folders = JSON.parse(localStorage.getItem('folders')) || [];
+                folders.push(folderName);
+                localStorage.setItem('folders', JSON.stringify(folders));
+                renderFolders(folders);
+            }
+        }
+
+        function deleteFolder(folderName) {
+            if (confirm(`Are you sure you want to delete the folder "${folderName}" and all its contents?`)) {
+                let folders = JSON.parse(localStorage.getItem('folders')) || [];
+                folders = folders.filter(f => f !== folderName);
+                localStorage.setItem('folders', JSON.stringify(folders));
+
+                let documents = JSON.parse(localStorage.getItem('documents')) || [];
+                documents = documents.filter(doc => doc.folder !== folderName);
+                localStorage.setItem('documents', JSON.stringify(documents));
+
+                renderFolders(folders);
+                renderDocuments(documents);
+            }
+        }
+
+        function selectFolder(folderName) {
+            currentFolder = folderName;
+            const documents = JSON.parse(localStorage.getItem('documents')) || [];
+            renderDocuments(documents);
+        }
+
+        function createNewDocument() {
+            const name = prompt('Enter document name:');
+            if (name) {
+                const newDoc = {
+                    id: Date.now().toString(),
+                    name: name,
+                    content: '',
+                    lastModified: Date.now(),
+                    folder: currentFolder
+                };
+                const documents = JSON.parse(localStorage.getItem('documents')) || [];
+                documents.push(newDoc);
+                localStorage.setItem('documents', JSON.stringify(documents));
+                renderDocuments(documents);
+            }
+        }
+
+        function deleteDocument(id) {
+            if (confirm('Are you sure you want to delete this document?')) {
+                let documents = JSON.parse(localStorage.getItem('documents')) || [];
+                documents = documents.filter(doc => doc.id !== id);
+                localStorage.setItem('documents', JSON.stringify(documents));
+                renderDocuments(documents);
+                if (currentDocument && currentDocument.id === id) {
+                    currentDocument = null;
+                    document.getElementById('editor').value = '';
+                }
+            }
+        }
+
+        function openDocument(id) {
+            const documents = JSON.parse(localStorage.getItem('documents')) || [];
+            currentDocument = documents.find(doc => doc.id === id);
+            if (currentDocument) {
+                document.getElementById('editor').value = currentDocument.content;
+            }
+        }
+
+        function autoSave() {
+            clearTimeout(autoSaveTimeout);
+            autoSaveTimeout = setTimeout(() => {
+                if (currentDocument) {
+                    currentDocument.content = document.getElementById('editor').value;
+                    currentDocument.lastModified = Date.now();
+                    const documents = JSON.parse(localStorage.getItem('documents')) || [];
+                    const index = documents.findIndex(doc => doc.id === currentDocument.id);
+                    if (index !== -1) {
+                        documents[index] = currentDocument;
+                        localStorage.setItem('documents', JSON.stringify(documents));
+                        renderDocuments(documents);
+                    }
+                }
+            }, 1000);
+        }
+
+        function saveToFile() {
+            if (currentDocument) {
+                const content = document.getElementById('editor').value;
+                const blob = new Blob([content], { type: 'text/plain' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${currentDocument.name}.txt`;
+                a.click();
+            }
+        }
+
+        function saveAllFiles() {
+            const documents = JSON.parse(localStorage.getItem('documents')) || [];
+            const zip = new JSZip();
+
+            documents.forEach(doc => {
+                zip.file(`${doc.name}.txt`, doc.content);
+            });
+
+            zip.generateAsync({type:"blob"})
+            .then(function(content) {
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(content);
+                a.download = "all_documents.zip";
+                a.click();
+            });
+        }
+
+        loadData();
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+</body>
+</html>
